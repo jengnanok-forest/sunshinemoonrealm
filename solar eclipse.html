@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="h-full w-full overflow-hidden select-none">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>日光幻境 - 動態遮光與 3D 立體球體</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            touch-action: none;
+            background-color: #020307;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.25);
+            border-radius: 4px;
+        }
+        .glass-panel {
+            background: rgba(8, 12, 22, 0.82);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 30px 70px rgba(0, 0, 0, 0.7);
+        }
+        .glass-btn {
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .glass-btn:hover {
+            background: rgba(255, 255, 255, 0.16);
+            border-color: rgba(255, 255, 255, 0.28);
+        }
+        .glass-btn.active {
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.38), rgba(217, 119, 6, 0.6));
+            border-color: rgba(251, 191, 36, 0.75);
+            box-shadow: 0 0 18px rgba(245, 158, 11, 0.45);
+        }
+        input[type=range] {
+            -webkit-appearance: none;
+            background: rgba(255, 255, 255, 0.12);
+            border-radius: 8px;
+            height: 6px;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 18px;
+            width: 18px;
+            border-radius: 50%;
+            background: #fbbf24;
+            cursor: pointer;
+            box-shadow: 0 0 12px rgba(251, 191, 36, 0.9);
+            transition: transform 0.15s ease;
+        }
+        input[type=range]::-webkit-slider-thumb:hover {
+            transform: scale(1.25);
+        }
+    </style>
+</head>
+<body class="h-full w-full font-sans text-slate-100">
+
+    <!-- Interactive Canvas -->
+    <canvas id="sunCanvas"></canvas>
+
+    <!-- Top Left Status & Information HUD -->
+    <div class="fixed top-5 left-5 right-5 sm:right-auto z-10 pointer-events-none flex flex-col gap-2.5">
+        <div class="flex items-center gap-3">
+            <div class="w-3.5 h-3.5 rounded-full bg-amber-400 animate-ping"></div>
+            <h1 class="text-xl sm:text-2xl font-bold tracking-wider text-amber-200 drop-shadow-[0_2px_14px_rgba(251,191,36,0.65)]">
+                日光幻境：3D 球體與動態遮光
+            </h1>
+        </div>
+        <p class="text-xs sm:text-sm text-slate-300 font-medium bg-slate-900/70 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/10 w-fit pointer-events-auto shadow-lg">
+            💡 <span class="text-amber-300 font-semibold">互動說明：</span>拖曳 3D 球體遮擋太陽，太陽直徑將隨遮蔽程度縮小！
+        </p>
+        <!-- Realtime Scientific Measurement HUD -->
+        <div id="eclipseHud" class="text-xs font-mono text-amber-300/90 bg-black/50 px-3.5 py-2 rounded-xl border border-amber-500/30 w-fit backdrop-blur-md flex flex-wrap gap-x-4 gap-y-1 shadow-md">
+            <div>遮蔽率：<span id="eclipsePercent" class="font-bold text-amber-400">0%</span></div>
+            <div>太陽當前直徑：<span id="sunDiameterVal" class="font-bold text-amber-300">120px</span></div>
+            <div>狀態：<span id="eclipseStatus" class="text-emerald-400 font-semibold">日光普照</span></div>
+        </div>
+    </div>
+
+    <!-- Toggle Button for Right Control Drawer -->
+    <button id="togglePanelBtn" onclick="toggleControlDrawer()" class="fixed top-5 right-5 z-30 p-3 rounded-2xl glass-btn text-amber-300 hover:text-white flex items-center gap-2 text-sm font-semibold shadow-xl backdrop-blur-md">
+        <svg id="panelIcon" class="w-5 h-5 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/>
+        </svg>
+        <span>控制面板</span>
+    </button>
+
+    <!-- Right Control Drawer Overlay -->
+    <div id="controlDrawer" class="fixed top-0 right-0 h-full w-80 sm:w-96 z-20 glass-panel translate-x-full transition-transform duration-300 ease-out p-6 flex flex-col gap-5 overflow-y-auto">
+        
+        <!-- Drawer Header -->
+        <div class="flex items-center justify-between border-b border-slate-700/60 pb-4 mt-12">
+            <h2 class="text-lg font-bold text-amber-300 flex items-center gap-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                </svg>
+                光學與物理參數
+            </h2>
+            <button onclick="toggleControlDrawer()" class="text-slate-400 hover:text-white transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+
+        <!-- 1. 3D Sphere Surface Material -->
+        <div class="flex flex-col gap-2">
+            <label class="text-xs font-semibold text-amber-400/90 tracking-wider uppercase">3D 球體材質 (Sphere Material)</label>
+            <div class="grid grid-cols-2 gap-2" id="materialGroup">
+                <button onclick="setMaterial('lunar')" class="glass-btn active p-2.5 rounded-xl text-xs font-medium text-left flex items-center gap-2" data-mat="lunar">
+                    <span class="w-3.5 h-3.5 rounded-full bg-slate-300 shadow-[0_0_8px_#cbd5e1]"></span>
+                    天體隕石月球
+                </button>
+                <button onclick="setMaterial('obsidian')" class="glass-btn p-2.5 rounded-xl text-xs font-medium text-left flex items-center gap-2" data-mat="obsidian">
+                    <span class="w-3.5 h-3.5 rounded-full bg-slate-800 shadow-[0_0_8px_#334155]"></span>
+                    深邃黑曜石
+                </button>
+                <button onclick="setMaterial('marble')" class="glass-btn p-2.5 rounded-xl text-xs font-medium text-left flex items-center gap-2" data-mat="marble">
+                    <span class="w-3.5 h-3.5 rounded-full bg-indigo-200 shadow-[0_0_8px_#c7d2fe]"></span>
+                    藍鈦大理石
+                </button>
+                <button onclick="setMaterial('crystal')" class="glass-btn p-2.5 rounded-xl text-xs font-medium text-left flex items-center gap-2" data-mat="crystal">
+                    <span class="w-3.5 h-3.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]"></span>
+                    翡翠水晶球
+                </button>
+            </div>
+        </div>
+
+        <!-- 2. Motion Physics Modes -->
+        <div class="flex flex-col gap-2">
+            <label class="text-xs font-semibold text-amber-400/90 tracking-wider uppercase">運動物理模式 (Physics Mode)</label>
+            <div class="grid grid-cols-2 gap-1.5" id="physicsGroup">
+                <button onclick="setPhysicsMode('direct')" class="glass-btn active p-2 rounded-xl text-xs font-medium text-center" data-phys="direct">
+                    即時跟隨 (Direct)
+                </button>
+                <button onclick="setPhysicsMode('inertia')" class="glass-btn p-2 rounded-xl text-xs font-medium text-center" data-phys="inertia">
+                    流體慣性 (Inertia)
+                </button>
+                <button onclick="setPhysicsMode('orbit')" class="glass-btn p-2 rounded-xl text-xs font-medium text-center" data-phys="orbit">
+                    引力軌道 (Orbit)
+                </button>
+                <button onclick="setPhysicsMode('spring')" class="glass-btn p-2 rounded-xl text-xs font-medium text-center" data-phys="spring">
+                    彈力回彈 (Spring)
+                </button>
+            </div>
+        </div>
+
+        <!-- 3. Color Theme Selector -->
+        <div class="flex flex-col gap-2">
+            <label class="text-xs font-semibold text-amber-400/90 tracking-wider uppercase">日光配色 (Solar Themes)</label>
+            <div class="grid grid-cols-2 gap-2" id="themeGroup">
+                <button onclick="setTheme('golden')" class="glass-btn active p-2.5 rounded-xl text-xs font-medium text-left flex items-center gap-2" data-theme="golden">
+                    <span class="w-3.5 h-3.5 rounded-full bg-amber-500 shadow-[0_0_8px_#f59e0b]"></span>
+                    金色烈日
+                </button>
+                <button onclick="setTheme('eclipse')" class="glass-btn p-2.5 rounded-xl text-xs font-medium text-left flex items-center gap-2" data-theme="eclipse">
+                    <span class="w-3.5 h-3.5 rounded-full bg-sky-400 shadow-[0_0_8px_#38bdf8]"></span>
+                    藍超巨星
+                </button>
+                <button onclick="setTheme('emerald')" class="glass-btn p-2.5 rounded-xl text-xs font-medium text-left flex items-center gap-2" data-theme="emerald">
+                    <span class="w-3.5 h-3.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]"></span>
+                    極光翡翠
+                </button>
+                <button onclick="setTheme('violet')" class="glass-btn p-2.5 rounded-xl text-xs font-medium text-left flex items-center gap-2" data-theme="violet">
+                    <span class="w-3.5 h-3.5 rounded-full bg-purple-500 shadow-[0_0_8px_#a855f7]"></span>
+                    紫羅蘭星雲
+                </button>
+            </div>
+        </div>
+
+        <!-- 4. Dynamic Parameter Sliders -->
+        <div class="flex flex-col gap-4 bg-slate-900/60 p-4 rounded-2xl border border-slate-800 shadow-inner">
+            <!-- Sun Shrinkage Factor Slider -->
+            <div class="flex flex-col gap-1.5">
+                <div class="flex justify-between text-xs">
+                    <span class="text-amber-300 font-semibold">遮光時太陽縮減幅度</span>
+                    <span id="sunShrinkVal" class="text-amber-400 font-mono">50%</span>
+                </div>
+                <input type="range" id="sunShrinkInput" min="10" max="85" value="50" oninput="updateParam('sunShrinkPower', this.value)">
+                <span class="text-[10px] text-slate-400">當球體擋住太陽時，太陽核心會縮小的比例</span>
+            </div>
+
+            <!-- Sun Base Radius Slider -->
+            <div class="flex flex-col gap-1.5">
+                <div class="flex justify-between text-xs">
+                    <span class="text-slate-300 font-medium">太陽基礎大小 (Sun Radius)</span>
+                    <span id="sunRadiusVal" class="text-amber-400 font-mono">65px</span>
+                </div>
+                <input type="range" id="sunRadiusInput" min="35" max="130" value="65" oninput="updateParam('sunRadius', this.value)">
+            </div>
+
+            <!-- Sphere Radius Slider -->
+            <div class="flex flex-col gap-1.5">
+                <div class="flex justify-between text-xs">
+                    <span class="text-slate-300 font-medium">3D 球體大小 (Sphere Radius)</span>
+                    <span id="sphereRadiusVal" class="text-amber-400 font-mono">80px</span>
+                </div>
+                <input type="range" id="sphereRadiusInput" min="35" max="160" value="80" oninput="updateParam('sphereRadius', this.value)">
+            </div>
+
+            <!-- Ray Intensity Slider -->
+            <div class="flex flex-col gap-1.5">
+                <div class="flex justify-between text-xs">
+                    <span class="text-slate-300 font-medium">光線穿透強度 (Ray Intensity)</span>
+                    <span id="rayIntensityVal" class="text-amber-400 font-mono">85%</span>
+                </div>
+                <input type="range" id="rayIntensityInput" min="20" max="100" value="85" oninput="updateParam('rayIntensity', this.value)">
+            </div>
+        </div>
+
+        <!-- 5. Audio Synthesizer & Action Buttons -->
+        <div class="flex flex-col gap-3 mt-auto">
+            <button id="soundToggleBtn" onclick="toggleAudioSynth()" class="w-full glass-btn p-3 rounded-2xl flex items-center justify-between text-sm font-medium text-amber-300 shadow-md">
+                <div class="flex items-center gap-2">
+                    <svg id="soundIcon" class="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/>
+                    </svg>
+                    <span>Web Audio 太陽高空頻率音效</span>
+                </div>
+                <span id="soundStatus" class="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">已關閉</span>
+            </button>
+
+            <div class="grid grid-cols-2 gap-2">
+                <button onclick="resetSpherePosition()" class="glass-btn p-2.5 rounded-xl text-xs font-medium text-slate-300 hover:text-white flex items-center justify-center gap-1.5">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                    重置球體位置
+                </button>
+                <button onclick="toggleFullscreen()" class="glass-btn p-2.5 rounded-xl text-xs font-medium text-slate-300 hover:text-white flex items-center justify-center gap-1.5">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/>
+                    </svg>
+                    全螢幕切換
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const canvas = document.getElementById('sunCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let width = 0;
+        let height = 0;
+        let dpr = window.devicePixelRatio || 1;
+
+        // Core Application Configuration Parameters
+        const config = {
+            theme: 'golden',
+            material: 'lunar',
+            physicsMode: 'direct', // 'direct', 'inertia', 'orbit', 'spring'
+            sunBaseRadius: 65,
+            sunShrinkPower: 0.50, // Max 50% shrinkage when centered over sun
+            sphereRadius: 80,
+            rayIntensity: 0.85,
+            rayCount: 96,
+            soundEnabled: false
+        };
+
+        // Celestial Objects State
+        const sun = {
+            x: 0,
+            y: 0,
+            baseRadius: 65,
+            currentRadius: 65
+        };
+
+        const sphere = {
+            x: 0,
+            y: 0,
+            targetX: 0,
+            targetY: 0,
+            vx: 0,
+            vy: 0,
+            radius: 80,
+            isDragging: false,
+            orbitAngle: 0,
+            orbitRadius: 230,
+            orbitSpeed: 0.012
+        };
+
+        // Dynamic Solar Themes
+        const themes = {
+            golden: {
+                bg: '#030308',
+                sunCore: '#ffffff',
+                sunInner: '#fbbf24',
+                sunOuter: '#d97706',
+                rayRGB: '251, 191, 36',
+                coronaRGB: '245, 158, 11',
+                dustColor: '#fef08a'
+            },
+            eclipse: {
+                bg: '#020612',
+                sunCore: '#ffffff',
+                sunInner: '#38bdf8',
+                sunOuter: '#0284c7',
+                rayRGB: '56, 189, 248',
+                coronaRGB: '14, 165, 233',
+                dustColor: '#e0f2fe'
+            },
+            emerald: {
+                bg: '#010f0b',
+                sunCore: '#ffffff',
+                sunInner: '#34d399',
+                sunOuter: '#059669',
+                rayRGB: '52, 211, 153',
+                coronaRGB: '16, 185, 129',
+                dustColor: '#d1fae5'
+            },
+            violet: {
+                bg: '#080314',
+                sunCore: '#ffffff',
+                sunInner: '#c084fc',
+                sunOuter: '#7e22ce',
+                rayRGB: '192, 132, 252',
+                coronaRGB: '168, 85, 247',
+                dustColor: '#fae8ff'
+            }
+        };
+
+        // 3D Sphere Surface Material Definitions
+        const materials = {
+            lunar: {
+                baseColor: '#1a202c',
+                midColor: '#475569',
+                highColor: '#cbd5e1',
+                specular: '255, 255, 255',
+                shine: 12,
+                roughness: 0.85
+            },
+            obsidian: {
+                baseColor: '#020617',
+                midColor: '#1e293b',
+                highColor: '#64748b',
+                specular: '255, 255, 255',
+                shine: 45,
+                roughness: 0.15
+            },
+            marble: {
+                baseColor: '#1e1b4b',
+                midColor: '#4338ca',
+                highColor: '#a5b4fc',
+                specular: '224, 231, 255',
+                shine: 30,
+                roughness: 0.35
+            },
+            crystal: {
+                baseColor: '#022c22',
+                midColor: '#059669',
+                highColor: '#6ee7b7',
+                specular: '240, 253, 244',
+                shine: 50,
+                roughness: 0.2
+            }
+        };
+
+        let currentEclipseRatio = 0; // 0 (unblocked) to 1 (full cover)
+
+        // Web Audio Synthesizer Setup
+        let audioCtx = null;
+        let osc1 = null;
+        let osc2 = null;
+        let filterNode = null;
+        let gainNode = null;
+
+        function initAudioSynth() {
+            if (audioCtx) return;
+            try {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new AudioContext();
+
+                osc1 = audioCtx.createOscillator();
+                osc2 = audioCtx.createOscillator();
+                filterNode = audioCtx.createBiquadFilter();
+                gainNode = audioCtx.createGain();
+
+                osc1.type = 'sine';
+                osc2.type = 'triangle';
+
+                osc1.frequency.setValueAtTime(96, audioCtx.currentTime); // Deep space bass
+                osc2.frequency.setValueAtTime(144, audioCtx.currentTime); // Harmonic fifth
+
+                filterNode.type = 'lowpass';
+                filterNode.frequency.setValueAtTime(350, audioCtx.currentTime);
+                filterNode.Q.setValueAtTime(4, audioCtx.currentTime);
+
+                gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+
+                osc1.connect(filterNode);
+                osc2.connect(filterNode);
+                filterNode.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+
+                osc1.start();
+                osc2.start();
+            } catch (e) {
+                console.warn('Audio API init error', e);
+            }
+        }
+
+        function updateAudioDynamics(distToSun, eclipseRatio) {
+            if (!audioCtx || !config.soundEnabled) return;
+
+            // Frequency shifts with eclipse occlusion & proximity
+            const baseFreq = 96 - eclipseRatio * 28;
+            const filterCutoff = 200 + (1 - eclipseRatio) * 1100 + (800 / (distToSun + 40));
+
+            osc1.frequency.setTargetAtTime(baseFreq, audioCtx.currentTime, 0.1);
+            osc2.frequency.setTargetAtTime(baseFreq * 1.5, audioCtx.currentTime, 0.1);
+            filterNode.frequency.setTargetAtTime(filterCutoff, audioCtx.currentTime, 0.1);
+        }
+
+        function toggleAudioSynth() {
+            initAudioSynth();
+            config.soundEnabled = !config.soundEnabled;
+
+            const btn = document.getElementById('soundToggleBtn');
+            const status = document.getElementById('soundStatus');
+
+            if (config.soundEnabled) {
+                if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+                gainNode.gain.setTargetAtTime(0.18, audioCtx.currentTime, 0.1);
+                status.innerText = '播放中';
+                status.className = 'text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-semibold';
+                btn.classList.add('border-amber-400/50');
+            } else {
+                if (gainNode) gainNode.gain.setTargetAtTime(0, audioCtx.currentTime, 0.1);
+                status.innerText = '已關閉';
+                status.className = 'text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-400';
+                btn.classList.remove('border-amber-400/50');
+            }
+        }
+
+        class DustParticle {
+            constructor() {
+                this.reset();
+            }
+
+            reset() {
+                this.angle = Math.random() * Math.PI * 2;
+                this.dist = Math.random() * Math.hypot(width, height) * 0.65;
+                this.speed = Math.random() * 0.7 + 0.25;
+                this.size = Math.random() * 2.4 + 0.6;
+                this.alpha = Math.random() * 0.75 + 0.25;
+            }
+
+            update() {
+                this.dist += this.speed;
+                if (this.dist > Math.hypot(width, height) * 0.7) {
+                    this.reset();
+                    this.dist = Math.random() * 20 + 10;
+                }
+            }
+
+            draw(ctx, theme, isShadowed) {
+                const px = sun.x + Math.cos(this.angle) * this.dist;
+                const py = sun.y + Math.sin(this.angle) * this.dist;
+
+                ctx.save();
+                // Dim particles inside blocked shadow cone
+                ctx.globalAlpha = isShadowed ? this.alpha * 0.12 : this.alpha * (1 - currentEclipseRatio * 0.55);
+                ctx.fillStyle = theme.dustColor;
+                ctx.beginPath();
+                ctx.arc(px, py, this.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        let dustParticles = [];
+        function initDustParticles() {
+            dustParticles = [];
+            for (let i = 0; i < 200; i++) {
+                dustParticles.push(new DustParticle());
+            }
+        }
+
+        function resize() {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            dpr = window.devicePixelRatio || 1;
+
+            canvas.width = width * dpr;
+            canvas.height = height * dpr;
+            canvas.style.width = width + 'px';
+            canvas.style.height = height + 'px';
+
+            ctx.scale(dpr, dpr);
+
+            sun.x = width / 2;
+            sun.y = height / 2;
+
+            if (sphere.x === 0 && sphere.y === 0) {
+                resetSpherePosition();
+            }
+        }
+
+        window.addEventListener('resize', resize);
+
+        function resetSpherePosition() {
+            sphere.x = width * 0.72;
+            sphere.y = height * 0.38;
+            sphere.targetX = sphere.x;
+            sphere.targetY = sphere.y;
+            sphere.vx = 0;
+            sphere.vy = 0;
+            sphere.orbitAngle = Math.atan2(sphere.y - sun.y, sphere.x - sun.x);
+            sphere.orbitRadius = Math.hypot(sphere.x - sun.x, sphere.y - sun.y);
+        }
+
+        function updatePointerTarget(clientX, clientY) {
+            sphere.targetX = clientX;
+            sphere.targetY = clientY;
+        }
+
+        window.addEventListener('pointerdown', (e) => {
+            const dx = e.clientX - sphere.x;
+            const dy = e.clientY - sphere.y;
+            if (Math.hypot(dx, dy) < sphere.radius * 1.4) {
+                sphere.isDragging = true;
+            } else {
+                updatePointerTarget(e.clientX, e.clientY);
+            }
+        });
+
+        window.addEventListener('pointermove', (e) => {
+            if (e.buttons > 0 || sphere.isDragging || config.physicsMode === 'direct') {
+                updatePointerTarget(e.clientX, e.clientY);
+            }
+        });
+
+        window.addEventListener('pointerup', () => {
+            sphere.isDragging = false;
+        });
+
+        function updatePhysics() {
+            sun.baseRadius = config.sunBaseRadius;
+            sphere.radius = config.sphereRadius;
+
+            if (config.physicsMode === 'direct') {
+                sphere.x += (sphere.targetX - sphere.x) * 0.28;
+                sphere.y += (sphere.targetY - sphere.y) * 0.28;
+            } else if (config.physicsMode === 'inertia') {
+                const ax = (sphere.targetX - sphere.x) * 0.08;
+                const ay = (sphere.targetY - sphere.y) * 0.08;
+                sphere.vx = (sphere.vx + ax) * 0.88;
+                sphere.vy = (sphere.vy + ay) * 0.88;
+                sphere.x += sphere.vx;
+                sphere.y += sphere.vy;
+            } else if (config.physicsMode === 'orbit') {
+                if (sphere.isDragging) {
+                    sphere.x += (sphere.targetX - sphere.x) * 0.2;
+                    sphere.y += (sphere.targetY - sphere.y) * 0.2;
+                    sphere.orbitAngle = Math.atan2(sphere.y - sun.y, sphere.x - sun.x);
+                    sphere.orbitRadius = Math.hypot(sphere.x - sun.x, sphere.y - sun.y);
+                } else {
+                    sphere.orbitAngle += sphere.orbitSpeed;
+                    sphere.x = sun.x + Math.cos(sphere.orbitAngle) * sphere.orbitRadius;
+                    sphere.y = sun.y + Math.sin(sphere.orbitAngle) * sphere.orbitRadius;
+                }
+            } else if (config.physicsMode === 'spring') {
+                const k = 0.06;
+                const damping = 0.82;
+                const fx = (sphere.targetX - sphere.x) * k;
+                const fy = (sphere.targetY - sphere.y) * k;
+                sphere.vx = (sphere.vx + fx) * damping;
+                sphere.vy = (sphere.vy + fy) * damping;
+                sphere.x += sphere.vx;
+                sphere.y += sphere.vy;
+            }
+        }
+
+        function calculateShadowAngles() {
+            const dx = sphere.x - sun.x;
+            const dy = sphere.y - sun.y;
+            const dist = Math.hypot(dx, dy);
+
+            const centerAngle = Math.atan2(dy, dx);
+            let halfSpan = 0;
+
+            if (dist > sphere.radius) {
+                halfSpan = Math.asin(sphere.radius / dist);
+            } else {
+                halfSpan = Math.PI;
+            }
+
+            return {
+                dist,
+                centerAngle,
+                halfSpan,
+                minAngle: centerAngle - halfSpan,
+                maxAngle: centerAngle + halfSpan
+            };
+        }
+
+        function isAngleInShadow(angle, shadowInfo) {
+            if (shadowInfo.halfSpan >= Math.PI) return true;
+            let diff = angle - shadowInfo.centerAngle;
+            while (diff < -Math.PI) diff += Math.PI * 2;
+            while (diff > Math.PI) diff -= Math.PI * 2;
+            return Math.abs(diff) <= shadowInfo.halfSpan;
+        }
+
+        // Precise circle-circle intersection area ratio (0 to 1)
+        function calculateEclipseCoverage(shadowInfo) {
+            const d = shadowInfo.dist;
+            const r1 = sun.baseRadius;
+            const r2 = sphere.radius;
+
+            if (d >= r1 + r2) return 0;
+            if (d <= Math.abs(r1 - r2)) {
+                return Math.min(1, (Math.PI * Math.min(r1, r2) ** 2) / (Math.PI * r1 ** 2));
+            }
+
+            const a = (r1 * r1 - r2 * r2 + d * d) / (2 * d);
+            const b = (r2 * r2 - r1 * r1 + d * d) / (2 * d);
+            const area1 = r1 * r1 * Math.acos(Math.min(1, Math.max(-1, a / r1))) - a * Math.sqrt(Math.max(0, r1 * r1 - a * a));
+            const area2 = r2 * r2 * Math.acos(Math.min(1, Math.max(-1, b / r2))) - b * Math.sqrt(Math.max(0, r2 * r2 - b * b));
+
+            return Math.min(1, Math.max(0, (area1 + area2) / (Math.PI * r1 * r1)));
+        }
+
+        function drawVolumetricRaysAndShadows(theme, shadowInfo) {
+            const rayCount = config.rayCount;
+            const maxRadius = Math.hypot(width, height) * 1.25;
+            const rayStep = (Math.PI * 2) / rayCount;
+            const time = Date.now() * 0.0018;
+
+            ctx.save();
+            ctx.translate(sun.x, sun.y);
+
+            for (let i = 0; i < rayCount; i++) {
+                const angle = i * rayStep;
+                const shadowed = isAngleInShadow(angle, shadowInfo);
+
+                if (shadowed) {
+                    // Dark volumetric shadow cone cast behind the sphere
+                    const shadowGrad = ctx.createRadialGradient(0, 0, sun.currentRadius, 0, 0, maxRadius);
+                    shadowGrad.addColorStop(0, 'rgba(2, 3, 7, 0.88)');
+                    shadowGrad.addColorStop(1, 'rgba(2, 3, 7, 0)');
+
+                    ctx.fillStyle = shadowGrad;
+                    ctx.beginPath();
+                    ctx.moveTo(0, 0);
+                    ctx.arc(0, 0, maxRadius, angle - rayStep * 0.6, angle + rayStep * 0.6);
+                    ctx.closePath();
+                    ctx.fill();
+                } else {
+                    // Radiant light ray beam
+                    const rayNoise = Math.sin(i * 3.4 + time * 2) * 0.22 + 0.78;
+                    const alpha = (1 - currentEclipseRatio * 0.75) * config.rayIntensity * rayNoise;
+
+                    const rayGrad = ctx.createRadialGradient(0, 0, sun.currentRadius * 0.4, 0, 0, maxRadius);
+                    rayGrad.addColorStop(0, `rgba(${theme.rayRGB}, ${alpha * 0.65})`);
+                    rayGrad.addColorStop(0.35, `rgba(${theme.rayRGB}, ${alpha * 0.25})`);
+                    rayGrad.addColorStop(1, 'transparent');
+
+                    ctx.fillStyle = rayGrad;
+                    ctx.beginPath();
+                    ctx.moveTo(0, 0);
+                    ctx.arc(0, 0, maxRadius, angle - rayStep * 0.55, angle + rayStep * 0.55);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+            }
+
+            ctx.restore();
+        }
+
+        function drawSunCoreAndCorona(theme) {
+            ctx.save();
+            ctx.translate(sun.x, sun.y);
+
+            // 1. Solar Corona (Ethereal outer flares)
+            const coronaRadius = sun.currentRadius * (1.85 + currentEclipseRatio * 1.1);
+            const coronaGrad = ctx.createRadialGradient(0, 0, sun.currentRadius * 0.7, 0, 0, coronaRadius);
+            coronaGrad.addColorStop(0, `rgba(${theme.coronaRGB}, ${0.85 + currentEclipseRatio * 0.15})`);
+            coronaGrad.addColorStop(0.5, `rgba(${theme.coronaRGB}, ${0.35 + currentEclipseRatio * 0.35})`);
+            coronaGrad.addColorStop(1, 'transparent');
+
+            ctx.fillStyle = coronaGrad;
+            ctx.beginPath();
+            ctx.arc(0, 0, coronaRadius, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 2. Bright Sun Disk (Dynamically shrunk!)
+            if (currentEclipseRatio < 0.98) {
+                const sunCoreGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, sun.currentRadius);
+                sunCoreGrad.addColorStop(0, '#ffffff');
+                sunCoreGrad.addColorStop(0.45, theme.sunInner);
+                sunCoreGrad.addColorStop(1, theme.sunOuter);
+
+                ctx.fillStyle = sunCoreGrad;
+                ctx.beginPath();
+                ctx.arc(0, 0, sun.currentRadius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            ctx.restore();
+        }
+
+        function draw3DSphere(theme, shadowInfo) {
+            const { x, y, radius } = sphere;
+            const mat = materials[config.material];
+
+            ctx.save();
+
+            // Vector pointing from Sphere center to Sun center (Light source direction)
+            const dx = sun.x - x;
+            const dy = sun.y - y;
+            const dist = shadowInfo.dist;
+            const angleToSun = Math.atan2(dy, dx);
+
+            // Normalize direction vector
+            const lx = dist > 0 ? dx / dist : 0;
+            const ly = dist > 0 ? dy / dist : 0;
+
+            // Compute light highlight offset on the 3D sphere surface
+            const offsetRatio = Math.min(0.7, (dist / (width * 0.5)));
+            const lightCenterX = x + lx * radius * offsetRatio;
+            const lightCenterY = y + ly * radius * offsetRatio;
+
+            // 1. Base Dark Ambient Sphere Shading
+            const baseGrad = ctx.createRadialGradient(
+                lightCenterX, lightCenterY, radius * 0.05,
+                x, y, radius
+            );
+
+            // Backlit / eclipse transition factor
+            const backlit = Math.min(1, Math.max(0, 1 - dist / (sun.baseRadius + radius * 1.5)));
+
+            if (backlit > 0.4) {
+                // Sphere turns into dark silhouette with subtle ambient bounce when in front of sun
+                baseGrad.addColorStop(0, '#0c101c');
+                baseGrad.addColorStop(0.7, '#04060c');
+                baseGrad.addColorStop(1, '#010204');
+            } else {
+                // Full 3D sphere diffuse lighting gradient
+                baseGrad.addColorStop(0, mat.highColor);
+                baseGrad.addColorStop(0.5, mat.midColor);
+                baseGrad.addColorStop(0.88, mat.baseColor);
+                baseGrad.addColorStop(1, '#020306');
+            }
+
+            ctx.fillStyle = baseGrad;
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 2. 3D Specular Highlight Gloss (Shiny surface reflection pointing at Sun)
+            if (backlit < 0.6) {
+                const specX = x + lx * radius * 0.52;
+                const specY = y + ly * radius * 0.52;
+                const specRadius = radius * (0.35 - mat.roughness * 0.2);
+
+                const specGrad = ctx.createRadialGradient(
+                    specX, specY, 0,
+                    specX, specY, specRadius
+                );
+                specGrad.addColorStop(0, `rgba(255, 255, 255, ${0.9 * (1 - backlit)})`);
+                specGrad.addColorStop(0.4, `rgba(${mat.specular}, ${0.4 * (1 - backlit)})`);
+                specGrad.addColorStop(1, 'transparent');
+
+                ctx.fillStyle = specGrad;
+                ctx.beginPath();
+                ctx.arc(specX, specY, specRadius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // 3. Realistic 3D Atmosphere / Rim Lighting (Sun-facing edge glow)
+            const rimAlpha = Math.min(1, (1 - currentEclipseRatio * 0.5));
+            const rimGlowGrad = ctx.createRadialGradient(
+                x + lx * radius * 0.88,
+                y + ly * radius * 0.88,
+                2,
+                x, y, radius
+            );
+
+            rimGlowGrad.addColorStop(0, `rgba(255, 255, 255, ${rimAlpha})`);
+            rimGlowGrad.addColorStop(0.3, `rgba(${theme.rayRGB}, ${rimAlpha * 0.85})`);
+            rimGlowGrad.addColorStop(0.85, 'transparent');
+
+            ctx.strokeStyle = rimGlowGrad;
+            ctx.lineWidth = 4.5;
+            ctx.beginPath();
+            ctx.arc(x, y, radius - 2, angleToSun - Math.PI / 2.1, angleToSun + Math.PI / 2.1);
+            ctx.stroke();
+
+            // 4. Diamond Ring Flare / Baily's Beads (When total eclipse is reached)
+            if (currentEclipseRatio > 0.88 && currentEclipseRatio < 0.99) {
+                const flareX = x + radius * Math.cos(angleToSun);
+                const flareY = y + radius * Math.sin(angleToSun);
+
+                const flareGrad = ctx.createRadialGradient(flareX, flareY, 0, flareX, flareY, 40);
+                flareGrad.addColorStop(0, '#ffffff');
+                flareGrad.addColorStop(0.25, `rgba(${theme.rayRGB}, 0.95)`);
+                flareGrad.addColorStop(1, 'transparent');
+
+                ctx.fillStyle = flareGrad;
+                ctx.beginPath();
+                ctx.arc(flareX, flareY, 40, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            ctx.restore();
+        }
+
+        function updateHudDisplay(eclipseRatio) {
+            const percentStr = Math.round(eclipseRatio * 100) + '%';
+            document.getElementById('eclipsePercent').innerText = percentStr;
+
+            // Show current shrunken Sun diameter
+            const currentDiam = Math.round(sun.currentRadius * 2);
+            document.getElementById('sunDiameterVal').innerText = currentDiam + 'px';
+
+            const statusEl = document.getElementById('eclipseStatus');
+            if (eclipseRatio >= 0.94) {
+                statusEl.innerText = '日全蝕 (Total Eclipse)';
+                statusEl.className = 'text-amber-400 font-bold animate-pulse';
+            } else if (eclipseRatio > 0.05) {
+                statusEl.innerText = '日偏蝕 (Partial Eclipse)';
+                statusEl.className = 'text-sky-300 font-semibold';
+            } else {
+                statusEl.innerText = '日光普照';
+                statusEl.className = 'text-emerald-400 font-medium';
+            }
+        }
+
+        function animate() {
+            updatePhysics();
+
+            const theme = themes[config.theme];
+            const shadowInfo = calculateShadowAngles();
+            currentEclipseRatio = calculateEclipseCoverage(shadowInfo);
+
+            // KEY FEATURE: Dynamic Sun Diameter Shrinkage on Occlusion
+            const shrinkAmount = currentEclipseRatio * config.sunShrinkPower;
+            sun.currentRadius = sun.baseRadius * (1 - shrinkAmount);
+
+            updateHudDisplay(currentEclipseRatio);
+            updateAudioDynamics(shadowInfo.dist, currentEclipseRatio);
+
+            // Clear Canvas
+            ctx.fillStyle = theme.bg;
+            ctx.fillRect(0, 0, width, height);
+
+            // 1. Draw Dust Particles
+            for (let p of dustParticles) {
+                p.update();
+                const shadowed = isAngleInShadow(p.angle, shadowInfo);
+                p.draw(ctx, theme, shadowed);
+            }
+
+            // 2. Draw Volumetric Sun Rays & Dynamic Shadow Cones
+            drawVolumetricRaysAndShadows(theme, shadowInfo);
+
+            // 3. Draw Dynamic Sun Core (With shrunken diameter)
+            drawSunCoreAndCorona(theme);
+
+            // 4. Draw 3D Shaded Sphere
+            draw3DSphere(theme, shadowInfo);
+
+            requestAnimationFrame(animate);
+        }
+
+        function toggleControlDrawer() {
+            const drawer = document.getElementById('controlDrawer');
+            const icon = document.getElementById('panelIcon');
+            const isOpen = !drawer.classList.contains('translate-x-full');
+
+            if (isOpen) {
+                drawer.classList.add('translate-x-full');
+                icon.style.transform = 'rotate(0deg)';
+            } else {
+                drawer.classList.remove('translate-x-full');
+                icon.style.transform = 'rotate(90deg)';
+            }
+        }
+
+        function setMaterial(matName) {
+            config.material = matName;
+            document.querySelectorAll('#materialGroup button').forEach(btn => {
+                if (btn.getAttribute('data-mat') === matName) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+        }
+
+        function setPhysicsMode(mode) {
+            config.physicsMode = mode;
+            document.querySelectorAll('#physicsGroup button').forEach(btn => {
+                if (btn.getAttribute('data-phys') === mode) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+        }
+
+        function setTheme(themeName) {
+            config.theme = themeName;
+            document.querySelectorAll('#themeGroup button').forEach(btn => {
+                if (btn.getAttribute('data-theme') === themeName) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+        }
+
+        function updateParam(param, val) {
+            val = parseFloat(val);
+            switch (param) {
+                case 'sunShrinkPower':
+                    config.sunShrinkPower = val / 100;
+                    document.getElementById('sunShrinkVal').innerText = val + '%';
+                    break;
+                case 'sunRadius':
+                    config.sunBaseRadius = val;
+                    document.getElementById('sunRadiusVal').innerText = val + 'px';
+                    break;
+                case 'sphereRadius':
+                    config.sphereRadius = val;
+                    document.getElementById('sphereRadiusVal').innerText = val + 'px';
+                    break;
+                case 'rayIntensity':
+                    config.rayIntensity = val / 100;
+                    document.getElementById('rayIntensityVal').innerText = val + '%';
+                    break;
+            }
+        }
+
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(() => {});
+            } else if (document.exitFullscreen) {
+                document.exitFullscreen();
+            }
+        }
+
+        // Window load entry point
+        window.onload = function() {
+            resize();
+            initDustParticles();
+            animate();
+        };
+    </script>
+</body>
+</html>
