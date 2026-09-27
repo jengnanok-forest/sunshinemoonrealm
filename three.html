@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>黃白交角與日月食 3D 模擬探索器</title>
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Three.js & OrbitControls -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: #030712;
+            color: #f3f4f6;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        /* Translucent Glassmorphic Right Sidebar */
+        .glass-panel {
+            background: rgba(11, 17, 32, 0.88);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+        }
+
+        .glass-button {
+            background: rgba(255, 255, 255, 0.07);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .glass-button:hover {
+            background: rgba(255, 255, 255, 0.18);
+            border-color: rgba(255, 255, 255, 0.3);
+            transform: translateY(-1px);
+        }
+
+        .glass-button:active {
+            transform: translateY(0);
+        }
+
+        /* Custom Scrollbar Styling */
+        ::-webkit-scrollbar {
+            width: 5px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.2);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.22);
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.45);
+        }
+
+        /* Range Slider Styling */
+        input[type=range] {
+            -webkit-appearance: none;
+            background: transparent;
+        }
+        input[type=range]:focus {
+            outline: none;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 6px;
+            cursor: pointer;
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 3px;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: #3b82f6;
+            cursor: pointer;
+            -webkit-appearance: none;
+            margin-top: -5px;
+            box-shadow: 0 0 10px rgba(59, 130, 246, 0.7);
+            transition: all 0.15s ease;
+        }
+        input[type=range]::-webkit-slider-thumb:hover {
+            background: #60a5fa;
+            transform: scale(1.2);
+        }
+
+        /* Pulsing Glow Effects for Eclipses */
+        @keyframes pulse-amber {
+            0%, 100% { box-shadow: 0 0 15px rgba(245, 158, 11, 0.4); }
+            50% { box-shadow: 0 0 28px rgba(245, 158, 11, 0.9); }
+        }
+        @keyframes pulse-red {
+            0%, 100% { box-shadow: 0 0 15px rgba(239, 68, 68, 0.4); }
+            50% { box-shadow: 0 0 28px rgba(239, 68, 68, 0.9); }
+        }
+        .glow-amber { animation: pulse-amber 1.8s infinite; }
+        .glow-red { animation: pulse-red 1.8s infinite; }
+    </style>
+</head>
+<body class="w-full h-screen overflow-hidden bg-slate-950">
+
+    <div id="canvas-container" class="absolute inset-0 z-0"></div>
+
+    <header class="absolute top-0 left-0 right-0 z-10 flex items-center justify-between px-6 py-4 pointer-events-none">
+        <div class="flex items-center space-x-3 pointer-events-auto">
+            <div class="p-2.5 rounded-xl bg-blue-600/20 border border-blue-500/30 backdrop-blur-md">
+                <i data-lucide="orbit" class="w-6 h-6 text-blue-400"></i>
+            </div>
+            <div>
+                <h1 class="text-xl font-bold tracking-wide text-white drop-shadow">黃白交角與日月食 3D 模擬探索器</h1>
+                <p class="text-xs text-slate-400">Earth-Moon Orbital Inclination & Eclipse Physics Simulator</p>
+            </div>
+        </div>
+
+        <div class="flex items-center space-x-3 pointer-events-auto">
+            <!-- Camera View Buttons -->
+            <div class="hidden md:flex items-center p-1 rounded-xl glass-panel space-x-1">
+                <button id="btn-view-overview" class="px-3 py-1.5 text-xs font-medium rounded-lg text-slate-300 hover:text-white glass-button" title="自由 3D 視角">
+                    <i data-lucide="globe" class="w-3.5 h-3.5 inline mr-1"></i> 全景 3D
+                </button>
+                <button id="btn-view-top" class="px-3 py-1.5 text-xs font-medium rounded-lg text-slate-300 hover:text-white glass-button" title="正俯視圖 (驗證地球與月球均為逆時針運轉)">
+                    <i data-lucide="arrow-down" class="w-3.5 h-3.5 inline mr-1"></i> 正俯視 (逆時針)
+                </button>
+                <button id="btn-view-side" class="px-3 py-1.5 text-xs font-medium rounded-lg text-slate-300 hover:text-white glass-button" title="側視黃白交角 (觀察 5.14° 傾角)">
+                    <i data-lucide="eye" class="w-3.5 h-3.5 inline mr-1"></i> 側視黃白交角
+                </button>
+                <button id="btn-view-earth" class="px-3 py-1.5 text-xs font-medium rounded-lg text-slate-300 hover:text-white glass-button" title="特寫跟隨地球">
+                    <i data-lucide="focus" class="w-3.5 h-3.5 inline mr-1"></i> 地球特寫
+                </button>
+            </div>
+
+            <!-- Toggle Sidebar Button -->
+            <button id="toggle-sidebar" class="p-2.5 rounded-xl glass-panel glass-button text-slate-200 flex items-center space-x-2" title="隱藏/顯示控制側欄">
+                <i data-lucide="panel-right-close" id="toggle-icon" class="w-5 h-5"></i>
+                <span class="text-xs font-medium hidden sm:inline">顯示/隱藏側欄</span>
+            </button>
+        </div>
+    </header>
+
+    <aside id="sidebar-panel" class="absolute top-20 right-6 bottom-6 w-80 sm:w-96 z-20 glass-panel rounded-2xl p-5 flex flex-col space-y-4 transition-all duration-300 ease-in-out transform translate-x-0">
+        
+        <!-- Sidebar Title Bar -->
+        <div class="flex items-center justify-between border-b border-slate-700/60 pb-3 flex-shrink-0">
+            <h2 class="text-sm font-semibold tracking-wider text-slate-200 uppercase flex items-center gap-2">
+                <i data-lucide="sliders" class="w-4 h-4 text-blue-400"></i> 控制與即時天象監測
+            </h2>
+            <span class="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">Realtime Physics</span>
+        </div>
+
+        <!-- Scrollable Controls Container -->
+        <div class="flex-1 overflow-y-auto pr-1 space-y-4">
+
+            <!-- 1. Realtime Eclipse HUD Status -->
+            <div id="hud-card" class="p-4 rounded-xl bg-slate-900/80 border border-slate-700/60 flex flex-col space-y-3">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs text-slate-400 font-medium">當前月相狀態</span>
+                    <span id="moon-phase-text" class="text-xs font-bold text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded border border-amber-400/20">朔 (新月)</span>
+                </div>
+
+                <!-- Dynamic Status Banner -->
+                <div id="status-badge" class="p-3 rounded-lg bg-slate-800 border border-slate-700 flex items-center space-x-3 transition-all duration-300">
+                    <div id="status-icon-box" class="p-2 rounded-lg bg-slate-700 text-slate-300">
+                        <i data-lucide="sun-dim" id="status-icon" class="w-6 h-6"></i>
+                    </div>
+                    <div>
+                        <div id="status-title" class="text-base font-bold text-white">無食象</div>
+                        <div id="status-desc" class="text-[11px] text-slate-400 leading-tight">月球影子偏高或偏低，未命中地球</div>
+                    </div>
+                </div>
+
+                <!-- Numerical Physics Indicators -->
+                <div class="grid grid-cols-2 gap-2 text-xs pt-1">
+                    <div class="bg-slate-800/50 p-2 rounded-lg border border-slate-700/40">
+                        <div class="text-[10px] text-slate-400">黃白交角 ($\theta$)</div>
+                        <div id="hud-angle" class="font-mono text-sm text-blue-300 font-bold">5.14°</div>
+                    </div>
+                    <div class="bg-slate-800/50 p-2 rounded-lg border border-slate-700/40">
+                        <div class="text-[10px] text-slate-400">月球相對黃道高度</div>
+                        <div id="hud-height" class="font-mono text-sm text-indigo-300 font-bold">+0.00 AU</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="space-y-2">
+                <label class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                    <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-400"></i> 一鍵情境實驗選擇
+                </label>
+                <div class="grid grid-cols-1 gap-2">
+                    <button id="preset-scenario-a" class="px-3 py-2 text-xs text-left rounded-xl glass-button flex items-center justify-between group">
+                        <div>
+                            <div class="font-medium text-slate-200 group-hover:text-blue-300 transition-colors">情境 A：真實 5.14° - 一般朔望 (無食)</div>
+                            <div class="text-[10px] text-slate-400">黃白交角存在，影子高低錯開不發生食象</div>
+                        </div>
+                        <i data-lucide="chevron-right" class="w-4 h-4 text-slate-500 group-hover:text-blue-400"></i>
+                    </button>
+
+                    <button id="preset-scenario-b" class="px-3 py-2 text-xs text-left rounded-xl glass-button flex items-center justify-between group border-amber-500/30">
+                        <div>
+                            <div class="font-medium text-amber-300 group-hover:text-amber-200 transition-colors">情境 B：真實 5.14° - 食季對齊 (觸發日月食)</div>
+                            <div class="text-[10px] text-slate-400">交點線對準太陽，日月地連成直線</div>
+                        </div>
+                        <i data-lucide="chevron-right" class="w-4 h-4 text-slate-500 group-hover:text-amber-400"></i>
+                    </button>
+
+                    <button id="preset-scenario-c" class="px-3 py-2 text-xs text-left rounded-xl glass-button flex items-center justify-between group">
+                        <div>
+                            <div class="font-medium text-slate-200 group-hover:text-blue-300 transition-colors">情境 C：假設 0° 傾角 (每個月都有食)</div>
+                            <div class="text-[10px] text-slate-400">黃白面完全重合，逢新月必日食、逢滿月必月食</div>
+                        </div>
+                        <i data-lucide="chevron-right" class="w-4 h-4 text-slate-500 group-hover:text-blue-400"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="space-y-3 pt-1 border-t border-slate-700/50">
+                <label class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                    <i data-lucide="settings-2" class="w-3.5 h-3.5 text-blue-400"></i> 軌道物理參數動態微調
+                </label>
+
+                <!-- Inclination Angle Slider -->
+                <div class="space-y-1">
+                    <div class="flex justify-between text-xs">
+                        <span class="text-slate-400">黃白交角 (軌道傾角)</span>
+                        <span id="slider-angle-val" class="font-mono text-blue-400 font-bold">5.14°</span>
+                    </div>
+                    <input id="slider-angle" type="range" min="0" max="15" step="0.1" value="5.14" class="w-full">
+                    <div class="flex justify-between text-[10px] text-slate-500 font-mono">
+                        <span>0° (共面)</span>
+                        <span>5.14° (真實地球)</span>
+                        <span>15° (極大傾角)</span>
+                    </div>
+                </div>
+
+                <!-- Line of Nodes Rotation Slider -->
+                <div class="space-y-1">
+                    <div class="flex justify-between text-xs">
+                        <span class="text-slate-400">交點線旋轉角度 ($\Omega$)</span>
+                        <span id="slider-node-val" class="font-mono text-blue-400 font-bold">0°</span>
+                    </div>
+                    <input id="slider-node" type="range" min="0" max="360" step="1" value="0" class="w-full">
+                    <p class="text-[10px] text-slate-500">當交點線平行於日地連線時，即進入食季 (Eclipse Season)。</p>
+                </div>
+            </div>
+
+            <div class="space-y-2 pt-1 border-t border-slate-700/50">
+                <label class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                    <i data-lucide="eye" class="w-3.5 h-3.5 text-emerald-400"></i> 視覺輔助面與影錐開關
+                </label>
+
+                <div class="grid grid-cols-1 gap-1.5 text-xs">
+                    <label class="flex items-center space-x-2 p-2 rounded-lg bg-slate-800/40 border border-slate-700/40 cursor-pointer hover:bg-slate-800/70">
+                        <input id="chk-ecliptic-plane" type="checkbox" checked class="rounded border-slate-700 text-yellow-500 focus:ring-0">
+                        <span class="text-slate-300">顯示黃道面 (黃色公轉面 Grid)</span>
+                    </label>
+
+                    <label class="flex items-center space-x-2 p-2 rounded-lg bg-slate-800/40 border border-slate-700/40 cursor-pointer hover:bg-slate-800/70">
+                        <input id="chk-white-plane" type="checkbox" checked class="rounded border-slate-700 text-cyan-500 focus:ring-0">
+                        <span class="text-slate-300">顯示白道面 (青色傾斜軌道面)</span>
+                    </label>
+
+                    <label class="flex items-center space-x-2 p-2 rounded-lg bg-slate-800/40 border border-slate-700/40 cursor-pointer hover:bg-slate-800/70">
+                        <input id="chk-shadow-cones" type="checkbox" checked class="rounded border-slate-700 text-red-500 focus:ring-0">
+                        <span class="text-slate-300">顯示地月陰影錐 (本影與半影)</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="space-y-3 pt-1 border-t border-slate-700/50">
+                <label class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                    <i data-lucide="clock" class="w-3.5 h-3.5 text-indigo-400"></i> 時間演進與快進控制
+                </label>
+
+                <div class="flex items-center space-x-2">
+                    <button id="btn-play" class="p-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/30 transition-all flex-shrink-0">
+                        <i data-lucide="pause" id="play-icon" class="w-4 h-4"></i>
+                    </button>
+
+                    <div class="flex-1 flex flex-col space-y-1">
+                        <div class="flex justify-between items-center text-[11px]">
+                            <span class="text-slate-400">模擬演算速度</span>
+                            <span id="speed-val" class="font-mono text-blue-400 font-bold">1.0x</span>
+                        </div>
+                        <input id="slider-speed" type="range" min="0.1" max="5" step="0.1" value="1.0" class="w-full">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-3 gap-2">
+                    <button id="btn-step-day" class="py-1.5 px-2 rounded-lg glass-button text-xs text-slate-300 hover:text-white" title="推進 1 天">
+                        +1 天
+                    </button>
+                    <button id="btn-step-month" class="py-1.5 px-2 rounded-lg glass-button text-xs text-amber-300 hover:text-amber-200" title="快進至下一個朔望月 (~29.53天)">
+                        +1 朔望月
+                    </button>
+                    <button id="btn-reset-time" class="py-1.5 px-2 rounded-lg glass-button text-xs text-slate-300 hover:text-white" title="重置時間">
+                        <i data-lucide="rotate-ccw" class="w-3 h-3 inline mr-1"></i> 重置
+                    </button>
+                </div>
+            </div>
+
+            <div class="p-3 rounded-xl bg-blue-950/30 border border-blue-800/30 text-[11px] text-blue-200/80 leading-relaxed space-y-1">
+                <div class="font-semibold text-blue-300 flex items-center gap-1">
+                    <i data-lucide="book-open" class="w-3.5 h-3.5"></i> 天文軌道特性與逆時針法則
+                </div>
+                <p>
+                    <b>逆時針軌道運轉 (Counter-Clockwise Orbit)：</b><br>
+                    從太陽系北極俯視，地球公轉與<b>月球繞地球公轉均為逆時針方向</b>。由於白道面相對於黃道面存在約 <b>5.14°</b> 夾角，大多數朔望日，月影都會高於或低於地球，不會發生日月食。
+                </p>
+            </div>
+
+        </div>
+    </aside>
+
+    <script>
+        // Initialize Lucide Icons
+        lucide.createIcons();
+
+        // Application State Object
+        const state = {
+            isPlaying: true,
+            timeSpeed: 1.0,
+            yellowWhiteAngleDeg: 5.14,
+            nodeAngleDeg: 0,
+            timeInDays: 0,
+            
+            // Visual Overlay Toggles
+            showEclipticPlane: true,
+            showWhitePlane: true,
+            showShadowCones: true,
+
+            // Calculated 3D Vectors
+            earthPos: new THREE.Vector3(),
+            moonPos: new THREE.Vector3(),
+            moonRelativePos: new THREE.Vector3(),
+            moonPhase: '朔 (新月)',
+            eclipseState: 'NONE' // NONE, SOLAR_TOTAL, SOLAR_PARTIAL, LUNAR_TOTAL, LUNAR_PARTIAL
+        };
+
+        // Astronomical Scale Constants for optimal 3D visualization
+        const ORBIT_EARTH_R = 32;     // Radius of Earth's orbit around Sun
+        const ORBIT_MOON_R = 7.0;      // Radius of Moon's orbit around Earth
+        const SUN_R = 4.0;
+        const EARTH_R = 1.4;
+        const MOON_R = 0.45;
+
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x030712, 0.0012);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 26, 46);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        container.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.maxDistance = 200;
+        controls.minDistance = 5;
+
+        function createSunTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512; canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+            const grad = ctx.createRadialGradient(256, 256, 10, 256, 256, 256);
+            grad.addColorStop(0, '#ffffff');
+            grad.addColorStop(0.25, '#fff7c2');
+            grad.addColorStop(0.55, '#f59e0b');
+            grad.addColorStop(0.85, '#d97706');
+            grad.addColorStop(1, '#78350f');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, 512, 512);
+
+            for (let i = 0; i < 350; i++) {
+                const x = Math.random() * 512;
+                const y = Math.random() * 512;
+                const r = Math.random() * 4;
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+                ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+            }
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        function createEarthTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 1024; canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+
+            // Ocean base
+            ctx.fillStyle = '#0f386b';
+            ctx.fillRect(0, 0, 1024, 512);
+
+            // Continents
+            ctx.fillStyle = '#1d6f42';
+            for (let i = 0; i < 35; i++) {
+                const cx = Math.random() * 1024;
+                const cy = Math.random() * 512;
+                const rx = 50 + Math.random() * 130;
+                const ry = 30 + Math.random() * 90;
+                ctx.beginPath();
+                ctx.ellipse(cx, cy, rx, ry, Math.random() * Math.PI, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Atmosphere / Clouds
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.38)';
+            for (let i = 0; i < 45; i++) {
+                const cx = Math.random() * 1024;
+                const cy = Math.random() * 512;
+                const rx = 40 + Math.random() * 160;
+                const ry = 10 + Math.random() * 35;
+                ctx.beginPath();
+                ctx.ellipse(cx, cy, rx, ry, Math.random() * Math.PI, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        function createMoonTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512; canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+
+            ctx.fillStyle = '#a1a1aa';
+            ctx.fillRect(0, 0, 512, 256);
+
+            // Lunar Maria (Dark Basaltic Plains)
+            ctx.fillStyle = '#4b5563';
+            for (let i = 0; i < 40; i++) {
+                const cx = Math.random() * 512;
+                const cy = Math.random() * 256;
+                const r = 5 + Math.random() * 26;
+                ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+            }
+
+            // Impact Craters
+            ctx.fillStyle = '#f3f4f6';
+            for (let i = 0; i < 60; i++) {
+                const cx = Math.random() * 512;
+                const cy = Math.random() * 256;
+                const r = 1 + Math.random() * 3.5;
+                ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+            }
+
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        const starsGeo = new THREE.BufferGeometry();
+        const starsCount = 2500;
+        const starsPositions = new Float32Array(starsCount * 3);
+        for (let i = 0; i < starsCount * 3; i += 3) {
+            starsPositions[i] = (Math.random() - 0.5) * 450;
+            starsPositions[i+1] = (Math.random() - 0.5) * 450;
+            starsPositions[i+2] = (Math.random() - 0.5) * 450;
+        }
+        starsGeo.setAttribute('position', new THREE.BufferAttribute(starsPositions, 3));
+        const starsMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.6, transparent: true, opacity: 0.85 });
+        const starfield = new THREE.Points(starsGeo, starsMat);
+        scene.add(starfield);
+
+        // Ambient Light
+        const ambientLight = new THREE.AmbientLight(0x334155, 0.35);
+        scene.add(ambientLight);
+
+        // Sun Point Light
+        const sunLight = new THREE.PointLight(0xfff7ed, 2.5, 300, 0.5);
+        sunLight.castShadow = true;
+        sunLight.shadow.mapSize.width = 2048;
+        sunLight.shadow.mapSize.height = 2048;
+        sunLight.shadow.camera.near = 0.5;
+        sunLight.shadow.camera.far = 150;
+        scene.add(sunLight);
+
+        const sunGeo = new THREE.SphereGeometry(SUN_R, 32, 32);
+        const sunMat = new THREE.MeshBasicMaterial({ map: createSunTexture() });
+        const sunMesh = new THREE.Mesh(sunGeo, sunMat);
+        scene.add(sunMesh);
+
+        // Sun Corona Glow Sprite
+        const canvasGlow = document.createElement('canvas');
+        canvasGlow.width = 128; canvasGlow.height = 128;
+        const ctxGlow = canvasGlow.getContext('2d');
+        const gradGlow = ctxGlow.createRadialGradient(64, 64, 0, 64, 64, 64);
+        gradGlow.addColorStop(0, 'rgba(251, 191, 36, 0.85)');
+        gradGlow.addColorStop(0.4, 'rgba(245, 158, 11, 0.35)');
+        gradGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        ctxGlow.fillStyle = gradGlow; ctxGlow.fillRect(0, 0, 128, 128);
+        const spriteMat = new THREE.SpriteMaterial({
+            map: new THREE.CanvasTexture(canvasGlow),
+            transparent: true, blending: THREE.AdditiveBlending
+        });
+        const sunGlow = new THREE.Sprite(spriteMat);
+        sunGlow.scale.set(SUN_R * 4.5, SUN_R * 4.5, 1);
+        sunMesh.add(sunGlow);
+
+        // Earth Pivot Group & Earth Mesh (Strictly clean: NO text overlay attached)
+        const earthGroup = new THREE.Group();
+        scene.add(earthGroup);
+
+        const earthGeo = new THREE.SphereGeometry(EARTH_R, 32, 32);
+        const earthMat = new THREE.MeshStandardMaterial({
+            map: createEarthTexture(),
+            roughness: 0.6,
+            metalness: 0.1
+        });
+        const earthMesh = new THREE.Mesh(earthGeo, earthMat);
+        earthMesh.castShadow = true;
+        earthMesh.receiveShadow = true;
+        earthGroup.add(earthMesh);
+
+        // Earth Rotation Axis Line (23.44° Tilt)
+        const axisGeo = new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(0, -EARTH_R * 1.6, 0),
+            new THREE.Vector3(0, EARTH_R * 1.6, 0)
+        ]);
+        const axisMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.5 });
+        const axisLine = new THREE.Line(axisGeo, axisMat);
+        axisLine.rotation.z = THREE.MathUtils.degToRad(23.44);
+        earthGroup.add(axisLine);
+
+        // Moon Mesh (Strictly clean: NO text overlay attached)
+        const moonGeo = new THREE.SphereGeometry(MOON_R, 32, 32);
+        const moonMat = new THREE.MeshStandardMaterial({
+            map: createMoonTexture(),
+            roughness: 0.8,
+            metalness: 0.1
+        });
+        const moonMesh = new THREE.Mesh(moonGeo, moonMat);
+        moonMesh.castShadow = true;
+        moonMesh.receiveShadow = true;
+        scene.add(moonMesh);
+
+        // 1. Ecliptic Orbit Line (Earth Orbit around Sun - Yellow)
+        const earthOrbitGeo = new THREE.BufferGeometry();
+        const earthOrbitPoints = [];
+        for (let i = 0; i <= 128; i++) {
+            const theta = (i / 128) * Math.PI * 2;
+            // CCW on top view (+Y): x = R*cos(theta), z = -R*sin(theta)
+            earthOrbitPoints.push(new THREE.Vector3(Math.cos(theta) * ORBIT_EARTH_R, 0, -Math.sin(theta) * ORBIT_EARTH_R));
+        }
+        earthOrbitGeo.setFromPoints(earthOrbitPoints);
+        const earthOrbitLine = new THREE.Line(earthOrbitGeo, new THREE.LineBasicMaterial({ color: 0xeab308, transparent: true, opacity: 0.45 }));
+        scene.add(earthOrbitLine);
+
+        // 2. Yellow Ecliptic Plane Mesh & Grid (黃道面)
+        const eclipticPlaneGroup = new THREE.Group();
+        const eclipticDiskGeo = new THREE.RingGeometry(SUN_R * 1.2, ORBIT_EARTH_R * 1.25, 64);
+        const eclipticDiskMat = new THREE.MeshBasicMaterial({
+            color: 0xeab308, transparent: true, opacity: 0.08, side: THREE.DoubleSide
+        });
+        const eclipticDiskMesh = new THREE.Mesh(eclipticDiskGeo, eclipticDiskMat);
+        eclipticDiskMesh.rotation.x = Math.PI / 2;
+        eclipticPlaneGroup.add(eclipticDiskMesh);
+
+        const eclipticGrid = new THREE.GridHelper(ORBIT_EARTH_R * 2.5, 36, 0xeab308, 0x1e293b);
+        eclipticPlaneGroup.add(eclipticGrid);
+        scene.add(eclipticPlaneGroup);
+
+        // 3. Cyan White Plane Mesh (白道面 - Tilted Lunar Orbit Plane)
+        const whitePlaneGroup = new THREE.Group();
+        const whitePlaneDiskGeo = new THREE.CircleGeometry(ORBIT_MOON_R * 1.15, 64);
+        const whitePlaneDiskMat = new THREE.MeshBasicMaterial({
+            color: 0x06b6d4, transparent: true, opacity: 0.18, side: THREE.DoubleSide
+        });
+        const whitePlaneMesh = new THREE.Mesh(whitePlaneDiskGeo, whitePlaneDiskMat);
+        whitePlaneMesh.rotation.x = Math.PI / 2;
+        whitePlaneGroup.add(whitePlaneMesh);
+
+        // Moon Orbit Line Ring
+        const moonOrbitGeo = new THREE.BufferGeometry();
+        const moonOrbitLine = new THREE.Line(moonOrbitGeo, new THREE.LineBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.85 }));
+        scene.add(moonOrbitLine);
+
+        scene.add(whitePlaneGroup);
+
+        // 4. Shadow Cones (Earth Umbra & Penumbra)
+        const shadowConesGroup = new THREE.Group();
+        scene.add(shadowConesGroup);
+
+        // Earth Umbra Mesh (Dark red cone)
+        const umbraGeo = new THREE.CylinderGeometry(EARTH_R, 0.05, 22, 32, 1, true);
+        umbraGeo.translate(0, -11, 0);
+        umbraGeo.rotateX(Math.PI / 2);
+        const umbraMat = new THREE.MeshBasicMaterial({ color: 0x7f1d1d, transparent: true, opacity: 0.4, side: THREE.DoubleSide });
+        const umbraMesh = new THREE.Mesh(umbraGeo, umbraMat);
+        shadowConesGroup.add(umbraMesh);
+
+        // Earth Penumbra Mesh (Translucent gray widening cone)
+        const penumbraGeo = new THREE.CylinderGeometry(EARTH_R, EARTH_R * 2.4, 22, 32, 1, true);
+        penumbraGeo.translate(0, -11, 0);
+        penumbraGeo.rotateX(Math.PI / 2);
+        const penumbraMat = new THREE.MeshBasicMaterial({ color: 0x475569, transparent: true, opacity: 0.18, side: THREE.DoubleSide });
+        const penumbraMesh = new THREE.Mesh(penumbraGeo, penumbraMat);
+        shadowConesGroup.add(penumbraMesh);
+
+        /**
+         * Realtime Physics Loop
+         * STRICT COUNTER-CLOCKWISE (CCW) FORMULA FOR TOP VIEW (+Y):
+         * X = R * cos(angle)
+         * Z = -R * sin(angle)
+         */
+        function updatePhysics() {
+            // Earth period = 365.25 days
+            const earthAngle = (state.timeInDays / 365.25) * Math.PI * 2;
+            
+            // Earth Position around Sun (Strictly Counter-Clockwise)
+            state.earthPos.set(
+                Math.cos(earthAngle) * ORBIT_EARTH_R,
+                0,
+                -Math.sin(earthAngle) * ORBIT_EARTH_R
+            );
+            earthGroup.position.copy(state.earthPos);
+
+            // Earth Self-Rotation (CCW) - 1 turn per 1 day
+            earthMesh.rotation.y = state.timeInDays * Math.PI * 2;
+
+            // Moon period = 27.32 days (Sidereal month)
+            const moonAngle = (state.timeInDays / 27.32) * Math.PI * 2;
+
+            // Inclination & Node Angles
+            const incRad = THREE.MathUtils.degToRad(state.yellowWhiteAngleDeg);
+            const nodeRad = THREE.MathUtils.degToRad(state.nodeAngleDeg);
+
+            // Local un-tilted COUNTER-CLOCKWISE Moon orbit position:
+            // x' = R * cos(a), z' = -R * sin(a)
+            const a = moonAngle - nodeRad;
+            const x_prime = ORBIT_MOON_R * Math.cos(a);
+            const z_prime = -ORBIT_MOON_R * Math.sin(a);
+
+            // Node Direction Vector N in X-Z plane: (cos(Node), 0, -sin(Node))
+            // Perpendicular Direction Vector P in X-Z plane: (sin(Node), 0, cos(Node))
+            // Tilted along Node Line by inclination incRad:
+            const relX = x_prime * Math.cos(nodeRad) + z_prime * Math.sin(nodeRad) * Math.cos(incRad);
+            const relZ = -x_prime * Math.sin(nodeRad) + z_prime * Math.cos(nodeRad) * Math.cos(incRad);
+            const relY = z_prime * Math.sin(incRad);
+
+            state.moonRelativePos.set(relX, relY, relZ);
+            state.moonPos.copy(state.earthPos).add(state.moonRelativePos);
+            moonMesh.position.copy(state.moonPos);
+
+            // Moon Tidal Locking Rotation (Matches orbit angle CCW)
+            moonMesh.rotation.y = moonAngle;
+
+            // Update Cyan White Plane Position & Tilt
+            whitePlaneGroup.position.copy(state.earthPos);
+            whitePlaneGroup.rotation.set(0, 0, 0);
+            whitePlaneGroup.rotation.y = nodeRad;
+            whitePlaneGroup.rotation.x = incRad;
+
+            // Update Moon Orbit Ring Points
+            if (state.showWhitePlane) {
+                const points = [];
+                for (let i = 0; i <= 64; i++) {
+                    const angle_i = (i / 64) * Math.PI * 2;
+                    const a_i = angle_i - nodeRad;
+                    const xp = ORBIT_MOON_R * Math.cos(a_i);
+                    const zp = -ORBIT_MOON_R * Math.sin(a_i);
+
+                    const mx = xp * Math.cos(nodeRad) + zp * Math.sin(nodeRad) * Math.cos(incRad);
+                    const mz = -xp * Math.sin(nodeRad) + zp * Math.cos(nodeRad) * Math.cos(incRad);
+                    const my = zp * Math.sin(incRad);
+
+                    points.push(new THREE.Vector3(state.earthPos.x + mx, state.earthPos.y + my, state.earthPos.z + mz));
+                }
+                moonOrbitGeo.setFromPoints(points);
+                moonOrbitLine.visible = true;
+                whitePlaneGroup.visible = true;
+            } else {
+                moonOrbitLine.visible = false;
+                whitePlaneGroup.visible = false;
+            }
+
+            // Update Ecliptic Plane Visibility
+            eclipticPlaneGroup.visible = state.showEclipticPlane;
+
+            // Update Shadow Cones Orientation
+            if (state.showShadowCones) {
+                shadowConesGroup.position.copy(state.earthPos);
+                // Direction pointing away from Sun
+                const dirFromSun = state.earthPos.clone().normalize();
+                shadowConesGroup.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dirFromSun);
+                shadowConesGroup.visible = true;
+            } else {
+                shadowConesGroup.visible = false;
+            }
+
+            // Execute Realtime Eclipse Detection Logic
+            calculateEclipseStatus();
+        }
+
+        /**
+         * Precise Realtime Eclipse Detection Algorithm
+         */
+        function calculateEclipseStatus() {
+            const sunToEarthDir = state.earthPos.clone().normalize();
+            const emVec = state.moonRelativePos.clone();
+            const emNorm = emVec.clone().normalize();
+
+            // Alignment Dot Product:
+            // -1 = Moon between Sun & Earth (New Moon / 朔)
+            // +1 = Moon behind Earth from Sun (Full Moon / 望)
+            const dot = emNorm.dot(sunToEarthDir);
+            const height = state.moonRelativePos.y;
+
+            // Calculate Moon Phase
+            if (dot < -0.88) state.moonPhase = '朔 (新月)';
+            else if (dot > 0.88) state.moonPhase = '望 (滿月)';
+            else if (Math.abs(dot) < 0.2) {
+                state.moonPhase = state.moonRelativePos.x > 0 ? '上弦月' : '下弦月';
+            } else {
+                state.moonPhase = dot < 0 ? '眉月 / 俄月' : '張月 / 凸月';
+            }
+
+            // Solar Eclipse Detection (New Moon region)
+            if (dot < -0.88) {
+                const projLength = state.moonPos.dot(sunToEarthDir);
+                const projPoint = sunToEarthDir.clone().multiplyScalar(projLength);
+                const distToAxis = state.moonPos.distanceTo(projPoint);
+
+                if (distToAxis < EARTH_R * 0.45) {
+                    state.eclipseState = 'SOLAR_TOTAL';
+                } else if (distToAxis < EARTH_R * 0.98) {
+                    state.eclipseState = 'SOLAR_PARTIAL';
+                } else {
+                    state.eclipseState = 'NONE';
+                }
+            }
+            // Lunar Eclipse Detection (Full Moon region)
+            else if (dot > 0.88) {
+                const moonBehindEarthDist = emVec.dot(sunToEarthDir);
+                if (moonBehindEarthDist > 0) {
+                    const shadowCenterPoint = state.earthPos.clone().add(sunToEarthDir.clone().multiplyScalar(moonBehindEarthDist));
+                    const distToShadowAxis = state.moonPos.distanceTo(shadowCenterPoint);
+
+                    if (distToShadowAxis < EARTH_R * 0.45) {
+                        state.eclipseState = 'LUNAR_TOTAL';
+                    } else if (distToShadowAxis < EARTH_R * 0.98) {
+                        state.eclipseState = 'LUNAR_PARTIAL';
+                    } else {
+                        state.eclipseState = 'NONE';
+                    }
+                } else {
+                    state.eclipseState = 'NONE';
+                }
+            } else {
+                state.eclipseState = 'NONE';
+            }
+
+            updateHUD(height);
+        }
+
+        const moonPhaseText = document.getElementById('moon-phase-text');
+        const statusBadge = document.getElementById('status-badge');
+        const statusIconBox = document.getElementById('status-icon-box');
+        const statusTitle = document.getElementById('status-title');
+        const statusDesc = document.getElementById('status-desc');
+        const hudAngle = document.getElementById('hud-angle');
+        const hudHeight = document.getElementById('hud-height');
+
+        function updateHUD(height) {
+            moonPhaseText.textContent = state.moonPhase;
+            hudAngle.textContent = `${state.yellowWhiteAngleDeg.toFixed(2)}°`;
+            hudHeight.textContent = `${height >= 0 ? '+' : ''}${height.toFixed(2)} AU`;
+
+            statusBadge.className = 'p-3 rounded-lg border flex items-center space-x-3 transition-all duration-300 ';
+
+            switch(state.eclipseState) {
+                case 'SOLAR_TOTAL':
+                    statusBadge.classList.add('bg-amber-950/90', 'border-amber-500', 'glow-amber');
+                    statusIconBox.className = 'p-2 rounded-lg bg-amber-500 text-slate-950 font-bold';
+                    statusTitle.textContent = '☀️ 日全食 (Total Solar Eclipse)';
+                    statusDesc.textContent = '日月地精確對齊，月本影籠罩地球表面！';
+                    break;
+                case 'SOLAR_PARTIAL':
+                    statusBadge.classList.add('bg-amber-900/40', 'border-amber-500/50');
+                    statusIconBox.className = 'p-2 rounded-lg bg-amber-600/40 text-amber-300';
+                    statusTitle.textContent = '⛅ 日偏食 (Partial Solar Eclipse)';
+                    statusDesc.textContent = '月球半影覆蓋地球部分區域。';
+                    break;
+                case 'LUNAR_TOTAL':
+                    statusBadge.classList.add('bg-red-950/90', 'border-red-500', 'glow-red');
+                    statusIconBox.className = 'p-2 rounded-lg bg-red-600 text-white font-bold';
+                    statusTitle.textContent = '🌕 月全食 (Total Lunar Eclipse)';
+                    statusDesc.textContent = '滿月完全進入地球本影，呈現紅月亮！';
+                    break;
+                case 'LUNAR_PARTIAL':
+                    statusBadge.classList.add('bg-red-900/40', 'border-red-500/50');
+                    statusIconBox.className = 'p-2 rounded-lg bg-red-700/40 text-red-300';
+                    statusTitle.textContent = '🌘 月偏食 (Partial Lunar Eclipse)';
+                    statusDesc.textContent = '月球部分進入地球本影。';
+                    break;
+                default:
+                    statusBadge.classList.add('bg-slate-800/80', 'border-slate-700/60');
+                    statusIconBox.className = 'p-2 rounded-lg bg-slate-700 text-slate-400';
+                    statusTitle.textContent = '無食象 (No Eclipse)';
+                    statusDesc.textContent = state.yellowWhiteAngleDeg > 0 ? 
+                        `黃白交角(${state.yellowWhiteAngleDeg.toFixed(1)}°)使影子偏高或偏低` : 
+                        '月球與影錐未重合';
+                    break;
+            }
+        }
+
+        // Sliders Listeners
+        const sliderAngle = document.getElementById('slider-angle');
+        const sliderAngleVal = document.getElementById('slider-angle-val');
+        sliderAngle.addEventListener('input', (e) => {
+            state.yellowWhiteAngleDeg = parseFloat(e.target.value);
+            sliderAngleVal.textContent = `${state.yellowWhiteAngleDeg.toFixed(2)}°`;
+        });
+
+        const sliderNode = document.getElementById('slider-node');
+        const sliderNodeVal = document.getElementById('slider-node-val');
+        sliderNode.addEventListener('input', (e) => {
+            state.nodeAngleDeg = parseFloat(e.target.value);
+            sliderNodeVal.textContent = `${state.nodeAngleDeg}°`;
+        });
+
+        const sliderSpeed = document.getElementById('slider-speed');
+        const speedVal = document.getElementById('speed-val');
+        sliderSpeed.addEventListener('input', (e) => {
+            state.timeSpeed = parseFloat(e.target.value);
+            speedVal.textContent = `${state.timeSpeed.toFixed(1)}x`;
+        });
+
+        // Checkbox Overlay Toggles
+        document.getElementById('chk-ecliptic-plane').addEventListener('change', (e) => {
+            state.showEclipticPlane = e.target.checked;
+        });
+        document.getElementById('chk-white-plane').addEventListener('change', (e) => {
+            state.showWhitePlane = e.target.checked;
+        });
+        document.getElementById('chk-shadow-cones').addEventListener('change', (e) => {
+            state.showShadowCones = e.target.checked;
+        });
+
+        const btnPlay = document.getElementById('btn-play');
+        const playIcon = document.getElementById('play-icon');
+        btnPlay.addEventListener('click', () => {
+            state.isPlaying = !state.isPlaying;
+            playIcon.setAttribute('data-lucide', state.isPlaying ? 'pause' : 'play');
+            lucide.createIcons();
+        });
+
+        document.getElementById('btn-reset-time').addEventListener('click', () => {
+            state.timeInDays = 0;
+            state.isPlaying = true;
+            playIcon.setAttribute('data-lucide', 'pause');
+            lucide.createIcons();
+        });
+
+        document.getElementById('btn-step-day').addEventListener('click', () => {
+            state.timeInDays += 1.0;
+        });
+
+        document.getElementById('btn-step-month').addEventListener('click', () => {
+            state.timeInDays += 29.53;
+        });
+
+        // Scenario Preset Buttons
+        document.getElementById('preset-scenario-a').addEventListener('click', () => {
+            state.yellowWhiteAngleDeg = 5.14;
+            sliderAngle.value = 5.14;
+            sliderAngleVal.textContent = "5.14°";
+
+            state.nodeAngleDeg = 0;
+            sliderNode.value = 0;
+            sliderNodeVal.textContent = "0°";
+            
+            state.timeInDays = 0;
+        });
+
+        document.getElementById('preset-scenario-b').addEventListener('click', () => {
+            state.yellowWhiteAngleDeg = 5.14;
+            sliderAngle.value = 5.14;
+            sliderAngleVal.textContent = "5.14°";
+
+            const currentEarthAngle = (state.timeInDays / 365.25) * Math.PI * 2;
+            const nodeDeg = (THREE.MathUtils.radToDeg(currentEarthAngle)) % 360;
+            state.nodeAngleDeg = Math.round(nodeDeg);
+            sliderNode.value = state.nodeAngleDeg;
+            sliderNodeVal.textContent = `${state.nodeAngleDeg}°`;
+
+            state.timeInDays = Math.round(state.timeInDays / 29.53) * 29.53;
+        });
+
+        document.getElementById('preset-scenario-c').addEventListener('click', () => {
+            state.yellowWhiteAngleDeg = 0.0;
+            sliderAngle.value = 0.0;
+            sliderAngleVal.textContent = "0.00°";
+        });
+
+        // Camera Preset Animations
+        document.getElementById('btn-view-overview').addEventListener('click', () => {
+            animateCamera(new THREE.Vector3(0, 26, 46), new THREE.Vector3(0, 0, 0));
+        });
+
+        document.getElementById('btn-view-top').addEventListener('click', () => {
+            // High +Y view: Clearly verifies COUNTER-CLOCKWISE motion of both Earth and Moon
+            animateCamera(new THREE.Vector3(0, 75, 0.01), new THREE.Vector3(0, 0, 0));
+        });
+
+        document.getElementById('btn-view-side').addEventListener('click', () => {
+            // Side view: Clearly highlights the 5.14° yellow-white inclination angle
+            const targetPos = state.earthPos.clone();
+            const camPos = targetPos.clone().add(new THREE.Vector3(18, 2, 12));
+            animateCamera(camPos, targetPos);
+        });
+
+        document.getElementById('btn-view-earth').addEventListener('click', () => {
+            const targetPos = state.earthPos.clone();
+            const camPos = targetPos.clone().add(new THREE.Vector3(14, 5, 14));
+            animateCamera(camPos, targetPos);
+        });
+
+        function animateCamera(targetPos, lookAtPos) {
+            const startPos = camera.position.clone();
+            const startLookAt = controls.target.clone();
+            let progress = 0;
+
+            function step() {
+                progress += 0.04;
+                if (progress <= 1) {
+                    camera.position.lerpVectors(startPos, targetPos, progress);
+                    controls.target.lerpVectors(startLookAt, lookAtPos, progress);
+                    controls.update();
+                    requestAnimationFrame(step);
+                }
+            }
+            step();
+        }
+
+        // Toggle Right Sidebar Collapse / Expand
+        const sidebar = document.getElementById('sidebar-panel');
+        const toggleBtn = document.getElementById('toggle-sidebar');
+        const toggleIcon = document.getElementById('toggle-icon');
+        let isPanelOpen = true;
+
+        toggleBtn.addEventListener('click', () => {
+            isPanelOpen = !isPanelOpen;
+            if (isPanelOpen) {
+                sidebar.classList.remove('translate-x-full', 'opacity-0');
+                sidebar.classList.add('translate-x-0', 'opacity-100');
+                toggleIcon.setAttribute('data-lucide', 'panel-right-close');
+            } else {
+                sidebar.classList.add('translate-x-full', 'opacity-0');
+                sidebar.classList.remove('translate-x-0', 'opacity-100');
+                toggleIcon.setAttribute('data-lucide', 'panel-right-open');
+            }
+            lucide.createIcons();
+        });
+
+        // Window Resize Handler
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const delta = clock.getDelta();
+
+            if (state.isPlaying) {
+                // 1 second real time = 5 simulation days at 1.0x speed
+                state.timeInDays += delta * 5.0 * state.timeSpeed;
+            }
+
+            // Update Celestial Physics & Geometry
+            updatePhysics();
+
+            // Update Orbit Controls
+            controls.update();
+
+            // Render WebGL Scene
+            renderer.render(scene, camera);
+        }
+
+        // Start animation after window load event
+        window.onload = () => {
+            animate();
+        };
+    </script>
+</body>
+</html>
