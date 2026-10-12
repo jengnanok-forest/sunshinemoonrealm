@@ -31,6 +31,7 @@
             display: block;
             width: 100vw;
             height: 100vh;
+            touch-action: none;
         }
         ::-webkit-scrollbar {
             width: 4px;
@@ -545,25 +546,34 @@
             sphere.targetY = clientY;
         }
 
-        window.addEventListener('pointerdown', (e) => {
+        // 相容 iPadOS Touch 與 Safari 的 Pointer 事件綁定
+        canvas.addEventListener('pointerdown', (e) => {
+            if (e.target === canvas) {
+                e.preventDefault();
+                try { canvas.setPointerCapture(e.pointerId); } catch(err) {}
+            }
             const dx = e.clientX - sphere.x;
             const dy = e.clientY - sphere.y;
-            if (Math.hypot(dx, dy) < sphere.radius * 1.4) {
+            if (Math.hypot(dx, dy) < sphere.radius * 1.5 || config.physicsMode === 'direct') {
                 sphere.isDragging = true;
-            } else {
+            }
+            updatePointerTarget(e.clientX, e.clientY);
+        });
+
+        canvas.addEventListener('pointermove', (e) => {
+            if (sphere.isDragging || config.physicsMode === 'direct' || e.buttons > 0) {
+                e.preventDefault();
                 updatePointerTarget(e.clientX, e.clientY);
             }
         });
 
-        window.addEventListener('pointermove', (e) => {
-            if (e.buttons > 0 || sphere.isDragging || config.physicsMode === 'direct') {
-                updatePointerTarget(e.clientX, e.clientY);
-            }
-        });
-
-        window.addEventListener('pointerup', () => {
+        const stopDrag = (e) => {
             sphere.isDragging = false;
-        });
+            try { canvas.releasePointerCapture(e.pointerId); } catch(err) {}
+        };
+
+        canvas.addEventListener('pointerup', stopDrag);
+        canvas.addEventListener('pointercancel', stopDrag);
 
         function updatePhysics() {
             sun.baseRadius = config.sunBaseRadius;
