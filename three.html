@@ -651,7 +651,7 @@
             // Tilted along Node Line by inclination incRad:
             const relX = x_prime * Math.cos(nodeRad) + z_prime * Math.sin(nodeRad) * Math.cos(incRad);
             const relZ = -x_prime * Math.sin(nodeRad) + z_prime * Math.cos(nodeRad) * Math.cos(incRad);
-            const relY = z_prime * Math.sin(incRad);
+            const relY = -z_prime * Math.sin(incRad); // 逆時針運行時，過 +N 端(升交點)後月球位於黃道面北側(上方)
 
             state.moonRelativePos.set(relX, relY, relZ);
             state.moonPos.copy(state.earthPos).add(state.moonRelativePos);
@@ -662,9 +662,10 @@
 
             // Update Cyan White Plane Position & Tilt
             whitePlaneGroup.position.copy(state.earthPos);
-            whitePlaneGroup.rotation.set(0, 0, 0);
-            whitePlaneGroup.rotation.y = nodeRad;
-            whitePlaneGroup.rotation.x = incRad;
+            // 旋轉順序 YXZ：先繞交點線 (local X) 傾斜，再繞 Y 軸轉到交點角度
+            // 傾角取正號，與月球座標 relY = -z' * sin(inc) 一致
+            whitePlaneGroup.rotation.order = 'YXZ';
+            whitePlaneGroup.rotation.set(incRad, nodeRad, 0);
 
             // Update Moon Orbit Ring Points
             if (state.showWhitePlane) {
@@ -677,7 +678,7 @@
 
                     const mx = xp * Math.cos(nodeRad) + zp * Math.sin(nodeRad) * Math.cos(incRad);
                     const mz = -xp * Math.sin(nodeRad) + zp * Math.cos(nodeRad) * Math.cos(incRad);
-                    const my = zp * Math.sin(incRad);
+                    const my = -zp * Math.sin(incRad);
 
                     points.push(new THREE.Vector3(state.earthPos.x + mx, state.earthPos.y + my, state.earthPos.z + mz));
                 }
